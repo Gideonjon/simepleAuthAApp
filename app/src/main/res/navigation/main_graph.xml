@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main_graph"
+    app:startDestination="@id/formDetails">
+
+    <fragment
+        android:id="@+id/formDetails"
+        android:name="com.authapp.authapp.FormDetails"
+        android:label="fragment_form_details"
+        tools:layout="@layout/fragment_form_details" >
+        <action
+            android:id="@+id/action_formDetails_to_cameraRules"
+            app:destination="@id/cameraRules" />
+    </fragment>
+    <fragment
+        android:id="@+id/cameraRules"
+        android:name="com.authapp.authapp.CameraRules"
+        android:label="fragment_camera_rules"
+        tools:layout="@layout/fragment_camera_rules" />
+</navigation>
