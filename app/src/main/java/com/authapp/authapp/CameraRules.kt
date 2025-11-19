@@ -28,8 +28,27 @@ import com.qoreid.sdk.core.models.SuccessResult
 class CameraRules : Fragment() {
     private var _binding: FragmentCameraRulesBinding? = null
     private val binding get() = _binding!!
-    private val CAMERA_REQUEST_CODE = 101
+        private val TAG = "CameraRules"
 
+      private lateinit var activityResultLauncher: ActivityResultLauncher<android.content.Intent>
+
+    private val requestPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) {
+                Toast.makeText(requireContext(), "Camera permission denied", Toast.LENGTH_SHORT)
+                    .show()
+            } else {
+                Log.d(TAG, "Camera permission granted")
+            }
+        }
+           override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        activityResultLauncher =
+            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+                handleQoreIdResult(result)
+            }
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -44,110 +63,103 @@ class CameraRules : Fragment() {
         return binding.root
     }
 
+   
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        checkCameraPermissionAndStart()
+
+        val sharedPrefs = requireContext().getSharedPreferences("info", Context.MODE_PRIVATE)
+        val firstName = sharedPrefs.getString("firstName", "") ?: ""
+        val lastName = sharedPrefs.getString("lastName", "") ?: ""
+        val phone = sharedPrefs.getString("phoneNumber", "") ?: ""
+        val clientId = "XZKHY139CQBD2QQ083PG"
+        val customerReference = "eaf93b5e-9571-41e0-82fe-7247b6f78560"
+        val productCode = "liveness"
+
+        val applicantData = ApplicantData(firstName, lastName, phone)
+        val inputData = InputData(applicantData)
+
+
+
+        binding.backButton.setOnClickListener {
+            findNavController().popBackStack()
+        }
+
+        binding.qoreIDButton.setOnClickListener {
+            checkCameraPermission()
+
+
+            try {
+                val qoreIDParams = QoreIDParams()
+                    .clientId(clientId)
+                    .customerReference(customerReference)
+                    // .inputData(inputData)
+                    .collection("liveness")
+
+
+                QoreIDSdk.params(qoreIDParams).launch(requireNotNull(requireActivity()))
+                Log.d(TAG, "Launching QoreID verification with params: $qoreIDParams")
+
+
+            } catch (e: Exception) {
+                Log.d(TAG, "QoreID launch failed", e)
+                Toast.makeText(requireContext(), "Error: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
-    /** Check permission before launching camera */
-    private fun checkCameraPermissionAndStart() {
-        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA)
-            == PackageManager.PERMISSION_GRANTED
-        ) {
-            startLivenessCheck()
-        } else {
-            showPermissionDialog()
+    private fun checkCameraPermission() {
+        when {
+            ContextCompat.checkSelfPermission(
+                requireContext(), Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED -> Log.d(TAG, "Camera permission granted")
+
+            else -> showPermissionDialog()
         }
     }
 
     private fun showPermissionDialog() {
         AlertDialog.Builder(requireContext())
             .setTitle("Camera Permission Needed")
-            .setMessage("We need your camera to perform a quick liveness check.")
+            .setMessage("Please allow camera access to continue verification.")
             .setCancelable(false)
             .setPositiveButton("Grant") { _, _ ->
-                ActivityCompat.requestPermissions(
-                    requireActivity(),
-                    arrayOf(Manifest.permission.CAMERA),
-                    CAMERA_REQUEST_CODE
-                )
+                requestPermissionLauncher.launch(Manifest.permission.CAMERA)
             }
-            .setNegativeButton("Cancel") { dialog, _ ->
-                dialog.dismiss()
-                Toast.makeText(requireContext(), "Camera permission denied", Toast.LENGTH_SHORT)
-                    .show()
-            }
+            .setNegativeButton("Cancel") { dialog, _ -> dialog.dismiss() }
             .show()
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == CAMERA_REQUEST_CODE &&
-            grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) {
-            startLivenessCheck()
-        } else {
-            Toast.makeText(requireContext(), "Permission denied", Toast.LENGTH_SHORT).show()
-        }
-    }
+    private fun handleQoreIdResult(result: androidx.activity.result.ActivityResult) {
+        val data = result.data ?: return
+        val qoreIdResult =
+            data.getSerializableExtra(com.qoreid.sdk.core.QoreIDSdk.QORE_ID_RESULT_EXTRA_KEY) as? QoreIDResult
+                ?: return
 
-    /** Launch QoreID liveness */
-    private fun startLivenessCheck() {
-        val sharedPreferences = requireContext().getSharedPreferences("info", Context.MODE_PRIVATE)
-        val userId = sharedPreferences.getString("uu_id", "") ?: ""
-        val userEmail = sharedPreferences.getString("emailAddress", "") ?: ""
-        val firstName = sharedPreferences.getString("firstName", "") ?: ""
-        val lastName = sharedPreferences.getString("lastName", "") ?: ""
-
-        val inputData = mapOf(
-            "first_name" to firstName,
-            "last_name" to lastName,
-            "email" to userEmail
-        )
-
-        // ✅ Build parameters using v2.x chainable API
-        val qoreIDParams = QoreIDParams()
-            .collection("liveness")
-            .clientId("XZKHY139CQBD2QQ083PG")
-
-
-        // Register + Launch SDK flow
-        QoreIDSdk.params(qoreIDParams)
-            .registerForResult(activityResultLauncher)
-            .launch(requireActivity())
-    }
-
-    /** Handle results */
-    private val activityResultLauncher: ActivityResultLauncher<android.content.Intent> =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == QORE_ID_RESULT_CODE && result.data != null) {
-                val qoreIdResult =
-                    result.data!!.getSerializableExtra(QORE_ID_RESULT_EXTRA_KEY) as QoreIDResult
-
-                when (qoreIdResult) {
-                    is SuccessResult -> {
-                        Toast.makeText(requireContext(), "Liveness successful!", Toast.LENGTH_LONG)
-                            .show()
-                        findNavController().popBackStack()
-                    }
-
-                    is ErrorResult -> {
-                        Toast.makeText(
-                            requireContext(),
-                            "Liveness failed: ${qoreIdResult.message}",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        findNavController().popBackStack()
-                    }
-                }
+        when (qoreIdResult) {
+            is SuccessResult -> {
+                Log.i(TAG, "Verification success: ${qoreIdResult.data}")
+                Toast.makeText(requireContext(), "Verification successful!", Toast.LENGTH_LONG)
+                    .show()
             }
+
+            is ErrorResult -> {
+                Log.e(TAG, "Verification failed: ${qoreIdResult.message}")
+                Toast.makeText(
+                    requireContext(),
+                    "Verification failed: ${qoreIdResult.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+
+            else -> Log.w(
+                TAG,
+                "Unhandled QoreID result type: ${qoreIdResult::class.java.simpleName}"
+            )
         }
+    }
 
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
     }
-
 }
